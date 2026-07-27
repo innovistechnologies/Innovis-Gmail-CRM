@@ -1,0 +1,564 @@
+{
+  "name": "Innovis Tech CRM - Gmail Bot + LiveKit Voice + Supabase Leads",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## INNOVIS TECHNOLOGIES — GMAIL CRM WORKFLOW\n\n1. **Gmail Setup**:\n   - Link your Gmail OAuth2 credential to the **Gmail Trigger** and **Send Email (Gmail)** nodes.\n\n2. **Supabase Setup**:\n   - Ensure your Supabase credential is assigned to `Fetch Innovis Services` and `Save Lead to Supabase CRM`.\n\n3. **Groq API**:\n   - Assign your Groq Credential to the LLM nodes (`llama-3.3-70b-versatile`).\n\n4. **LiveKit Voice Engine**:\n   - Standard HTTP headers configured to generate voice meeting rooms upon request.",
+        "height": 420,
+        "width": 460,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c227b997-1229-488d-9940-d2cf471d5fe3",
+      "name": "Gmail Setup Notes"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "readStatus": "unread"
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        192,
+        800
+      ],
+      "id": "6e79141a-60cf-4ca2-a1d1-5f50a31aa4e8",
+      "name": "Gmail Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "nTXjCH7pvxSE9vGQ",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "inv-email-001",
+              "name": "customer_email",
+              "value": "={{ $json.From.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/)?.[0] }}",
+              "type": "string"
+            },
+            {
+              "id": "inv-email-002",
+              "name": "customer_name",
+              "value": "={{ $json.From.split('<')[0].trim() || 'Valued Client' }}",
+              "type": "string"
+            },
+            {
+              "id": "inv-email-003",
+              "name": "message_text",
+              "value": "={{ $json.text || $json.snippet }}",
+              "type": "string"
+            },
+            {
+              "id": "inv-email-004",
+              "name": "subject",
+              "value": "={{ $json.subject || 'Inquiry regarding Innovis Services' }}",
+              "type": "string"
+            },
+            {
+              "id": "inv-email-005",
+              "name": "thread_id",
+              "value": "={{ $json.threadId }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        432,
+        800
+      ],
+      "id": "725c9e67-f022-4dcc-93f3-bfa1cb3fd108",
+      "name": "Extract Message Data"
+    },
+    {
+      "parameters": {
+        "model": "llama-3.3-70b-versatile",
+        "options": {
+          "temperature": 0.3
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        608,
+        1296
+      ],
+      "id": "580ae688-0326-4ca0-93e1-74810cd40242",
+      "name": "Main LLM (Groq)",
+      "credentials": {
+        "groqApi": {
+          "id": "k2DJev8kf7RQdAxM",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Extract Message Data').item.json.customer_email }}",
+        "contextWindowLength": 20
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        784,
+        1088
+      ],
+      "id": "5cdfdfa2-0c2c-46e8-8a2d-022d8fbee61f",
+      "name": "Session Memory"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "services"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        448,
+        1008
+      ],
+      "id": "8e015c7e-6cb6-4031-ada7-a5bebeb3ed80",
+      "name": "Fetch Innovis Services",
+      "credentials": {
+        "supabaseApi": {
+          "id": "8s1EbJ5lpdcThFa3",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Customer Query: {{ $('Extract Message Data').first().json.message_text }}\n\nInnovis Services Offered:\n{{ JSON.stringify($('Fetch Innovis Services').all().map(item => item.json)) }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are the AI Email Consultant for Innovis Technologies (contact: innovistech63@gmail.com). We build web applications, custom software, and AI solutions.\n\n## Instructions:\n1. Answer client questions regarding our web development packages and tech stack.\n2. Primary offerings:\n   - Static Website Plan (₹11,999)\n   - Full Stack App Plan (₹21,999)\n   - Full Stack + AI + Billing System (₹39,999)\n3. Detect if the client wants a VOICE/TECHNICAL CALL. Set `wants_voice_call: true` if they ask to discuss, talk to an engineer, arrange a call, schedule a demo, or converse via live voice.\n4. Reply professionally in the same language or tone used by the customer.\n\nOutput ONLY a JSON object with: reply_message, is_qualified_lead, wants_voice_call, service_interest, budget_range, urgency, lead_summary.",
+          "maxIterations": 15
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        704,
+        800
+      ],
+      "id": "1ae7909c-4468-4f2a-afb3-6bbcfc90e13c",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.output.wants_voice_call }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              },
+              "id": "c1973bf7-c8ca-4d51-a9b3-e7b8eee08529"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1088,
+        800
+      ],
+      "id": "53662ad9-aead-4fda-9895-f248119da39a",
+      "name": "Wants Voice Call?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. LiveKit Credentials (Pre-filled from your LiveKit key screen)\nconst apiKey = \"APIb8VdqhuwrfGb\"; \nconst apiSecret = \"jsHt2jXGd7ddGNqiGTlXD4QE2lR5phpKqheOy5xFA1I\";\n\n// 2. Room Name Generation\nconst messageData = $('Extract Message Data').first()?.json || {};\nconst gmailData = $('Gmail Trigger').first()?.json || {};\nconst rawEmail = messageData.customer_email || messageData.from_email || gmailData.from || 'client';\nconst cleanEmail = String(rawEmail).replace(/[^a-zA-Z0-9]/g, '');\nconst ts = Date.now().toString(36);\nconst roomName = `innovis-${cleanEmail.slice(0, 8)}-${ts}`;\n\n// 3. UTF-8 & Base64URL Encoding Helpers\nfunction base64url(input) {\n  let str = typeof input === 'string' ? input : JSON.stringify(input);\n  return Buffer.from(str, 'utf-8')\n    .toString('base64')\n    .replace(/=/g, '')\n    .replace(/\\+/g, '-')\n    .replace(/\\//g, '_');\n}\n\nfunction base64urlBuffer(buf) {\n  return buf.toString('base64')\n    .replace(/=/g, '')\n    .replace(/\\+/g, '-')\n    .replace(/\\//g, '_');\n}\n\n// 4. HMAC-SHA256 Implementation\nfunction hmacSha256(keyStr, messageStr) {\n  function rightRotate(v, a) { return (v >>> a) | (v << (32 - a)); }\n  const K = [\n    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,\n    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,\n    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,\n    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,\n    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,\n    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,\n    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,\n    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2\n  ];\n\n  function sha256Bytes(bytes) {\n    const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];\n    const l = bytes.length, bitLen = l * 8;\n    const padLen = (l % 64 < 56) ? 56 - (l % 64) : 120 - (l % 64);\n    const padded = new Uint8Array(l + padLen + 8);\n    padded.set(bytes);\n    padded[l] = 0x80;\n    const view = new DataView(padded.buffer);\n    view.setUint32(padded.length - 4, bitLen & 0xffffffff, false);\n    view.setUint32(padded.length - 8, Math.floor(bitLen / 0x100000000), false);\n    for (let i = 0; i < padded.length; i += 64) {\n      const w = new Uint32Array(64);\n      for (let t = 0; t < 16; t++) w[t] = view.getUint32(i + t * 4, false);\n      for (let t = 16; t < 64; t++) {\n        const s0 = rightRotate(w[t-15], 7) ^ rightRotate(w[t-15], 18) ^ (w[t-15] >>> 3);\n        const s1 = rightRotate(w[t-2], 17) ^ rightRotate(w[t-2], 19) ^ (w[t-2] >>> 10);\n        w[t] = (w[t-16] + s0 + w[t-7] + s1) | 0;\n      }\n      let [a, b, c, d, e, f, g, h] = H;\n      for (let t = 0; t < 64; t++) {\n        const S1 = rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25);\n        const ch = (e & f) ^ (~e & g);\n        const temp1 = (h + S1 + ch + K[t] + w[t]) | 0;\n        const S0 = rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22);\n        const maj = (a & b) ^ (a & c) ^ (b & c);\n        const temp2 = (S0 + maj) | 0;\n        h = g; g = f; f = e; e = (d + temp1) | 0;\n        d = c; c = b; b = a; a = (temp1 + temp2) | 0;\n      }\n      H[0] = (H[0] + a) | 0; H[1] = (H[1] + b) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;\n      H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;\n    }\n    const res = new Uint8Array(32);\n    const resView = new DataView(res.buffer);\n    for (let i = 0; i < 8; i++) resView.setUint32(i * 4, H[i], false);\n    return res;\n  }\n\n  let key = Buffer.from(keyStr, 'utf-8');\n  if (key.length > 64) key = sha256Bytes(key);\n  if (key.length < 64) { const tmp = new Uint8Array(64); tmp.set(key); key = tmp; }\n  const oKey = new Uint8Array(64), iKey = new Uint8Array(64);\n  for (let i = 0; i < 64; i++) { oKey[i] = key[i] ^ 0x5c; iKey[i] = key[i] ^ 0x36; }\n  const msg = Buffer.from(messageStr, 'utf-8');\n  const inner = new Uint8Array(64 + msg.length);\n  inner.set(iKey); inner.set(msg, 64);\n  const outer = new Uint8Array(64 + 32);\n  outer.set(oKey); outer.set(sha256Bytes(inner), 64);\n  return Buffer.from(sha256Bytes(outer));\n}\n\n// 5. Construct JWT Header & Payload\nconst now = Math.floor(Date.now() / 1000);\nconst header = { alg: \"HS256\", typ: \"JWT\" };\nconst payload = {\n  iss: apiKey,\n  sub: \"n8n-server\",\n  nbf: now - 10,\n  exp: now + 3600,\n  video: { \n    roomCreate: true, \n    roomAdmin: true,\n    roomList: true\n  }\n};\n\nconst unsignedToken = `${base64url(header)}.${base64url(payload)}`;\nconst signatureBuffer = hmacSha256(apiSecret, unsignedToken);\nconst signature = base64urlBuffer(signatureBuffer);\nconst jwtToken = `${unsignedToken}.${signature}`;\n\n// 6. Return values to n8n pipeline\nreturn [{\n  json: {\n    room_name: roomName,\n    livekit_token: jwtToken\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        640
+      ],
+      "id": "497112b4-e4a4-40b9-9562-933d4963e6c4",
+      "name": "Generate Room Name"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://innovis-crm-p5b3q926.livekit.cloud",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.livekit_token }}\n"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "name",
+              "value": "={{ $json.room_name }}"
+            },
+            {
+              "name": "empty_timeout",
+              "value": "300"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1712,
+        640
+      ],
+      "id": "f3a8bdc8-0ec5-433b-8c30-dc6e7dc192c3",
+      "name": "Create LiveKit Room"
+    },
+    {
+      "parameters": {
+        "jsCode": "const token = $json.token || 'EXAMPLE_TOKEN';\nconst livekitUrl = encodeURIComponent('wss://innovis-crm-p5b3q926.livekit.cloud');\nconst joinUrl = `https://meet.livekit.io/?liveKitUrl=${livekitUrl}&token=${encodeURIComponent(token)}`;\nreturn [{ json: { join_url: joinUrl } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        640
+      ],
+      "id": "c7a961aa-3d40-4c96-9cc2-cd47ff3123e9",
+      "name": "Build Join Link"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Extract Message Data').first()?.json?.customer_email || $('Gmail Trigger').first()?.json?.from?.value?.[0]?.address || $('Gmail Trigger').first()?.json?.from || '' }}",
+        "subject": "=Re: {{ $('Extract Message Data').item.json.subject }}",
+        "message": "=<p>Hello {{ $('Extract Message Data').item.json.customer_name }},</p><p>{{ $('AI Agent').item.json.output.reply_message }}</p><br/><hr/><p><strong>📞 Ready to speak live with our AI Consultant?</strong></p><p>You can join our real-time voice room immediately by clicking the link below:</p><p><a href=\"{{ $json.join_url }}\" style=\"background-color:#FF6B00;color:white;padding:10px 18px;text-decoration:none;border-radius:5px;display:inline-block;\">Join Voice Call Room</a></p><br/><p>Best regards,<br/><strong>Innovis Technologies Team</strong></p>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2272,
+        640
+      ],
+      "id": "00b0f6ec-ebf3-4115-b4bd-75a6b2624470",
+      "name": "Send Email (Gmail)",
+      "webhookId": "b458f81e-c34a-43c7-8972-deace355f3cf",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "nTXjCH7pvxSE9vGQ",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "leads",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "customer_name",
+              "fieldValue": "={{ $('Extract Message Data').item.json.customer_name }}"
+            },
+            {
+              "fieldId": "customer_email",
+              "fieldValue": "={{ $('Extract Message Data').item.json.customer_email }}"
+            },
+            {
+              "fieldId": "message",
+              "fieldValue": "={{ $('Extract Message Data').item.json.message_text }}"
+            },
+            {
+              "fieldId": "service_interest",
+              "fieldValue": "={{ $('AI Agent').item.json.output.service_interest }}"
+            },
+            {
+              "fieldId": "budget",
+              "fieldValue": "={{ $('AI Agent').item.json.output.budget_range }}"
+            },
+            {
+              "fieldId": "urgency",
+              "fieldValue": "={{ $('AI Agent').item.json.output.urgency }}"
+            },
+            {
+              "fieldId": "lead_summary",
+              "fieldValue": "={{ $('AI Agent').item.json.output.lead_summary }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "New"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1328,
+        944
+      ],
+      "id": "91331abd-ca65-4bf9-96de-ca8cc4b63bf8",
+      "name": "Save Lead to Supabase CRM",
+      "credentials": {
+        "supabaseApi": {
+          "id": "8s1EbJ5lpdcThFa3",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "llama-3.1-8b-instant",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        688,
+        1424
+      ],
+      "id": "4398896e-d3d3-4d18-bd0d-0ec84bb502d2",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "k2DJev8kf7RQdAxM",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "meta-llama/llama-3.1-8b-instruct",
+          "mode": "list",
+          "cachedResultName": "meta-llama/llama-3.1-8b-instruct"
+        },
+        "builtInTools": {},
+        "options": {
+          "maxTokens": 1000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        656,
+        1056
+      ],
+      "id": "9b32178e-96e9-4dab-9afc-2dcffc2bcf11",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "FSYdHr7E0jJAsS3E",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.5-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        288,
+        1280
+      ],
+      "id": "9f2f69a8-bbc3-4b14-8a72-3be86120ce21",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "AcdlwuSKIIeQFr20",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Message Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message Data": {
+      "main": [
+        [
+          {
+            "node": "Fetch Innovis Services",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Wants Voice Call?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wants Voice Call?": {
+      "main": [
+        [
+          {
+            "node": "Generate Room Name",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Lead to Supabase CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Room Name": {
+      "main": [
+        [
+          {
+            "node": "Create LiveKit Room",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create LiveKit Room": {
+      "main": [
+        [
+          {
+            "node": "Build Join Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Join Link": {
+      "main": [
+        [
+          {
+            "node": "Send Email (Gmail)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        []
+      ]
+    },
+    "Fetch Innovis Services": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Session Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "6306bd80-51aa-4de7-b642-5da853608383",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "fd0aae31796695b50f720f4f9017805f5cdedeaa3f547436d55254f2c3f69fa2"
+  },
+  "nodeGroups": [],
+  "id": "VAs6CFHOOYFmM5J1",
+  "tags": []
+}
